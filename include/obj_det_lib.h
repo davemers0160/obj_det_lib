@@ -7,6 +7,9 @@
 //#include <vector>
 
 #if defined(_WIN32) | defined(__WIN32__) | defined(__WIN32) | defined(_WIN64) | defined(__WIN64)
+
+#if defined(BUILD_LIB)
+
 #ifdef OBJ_DLL_EXPORTS
 #define OBJ_DLL_API __declspec(dllexport)
 #else
@@ -14,11 +17,13 @@
 #endif
 
 #else
-#define OBJ_DLL_API
-//#ifdef MNIST_DLL_API
-//#undef MNIST_DLL_API
 
-//#endif
+#define OBJ_DLL_API
+
+#endif
+
+#else
+#define OBJ_DLL_API
 
 #endif
 

@@ -4,9 +4,15 @@
 #include <string>
 #include <vector>
 
+#if !defined(BUILD_LIB)
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#endif
+
 // Custom includes
 #include "overlay_bounding_box.h"
-
+#include "file_ops.h"
 #include "obj_det_lib.h"
 #include "obj_det_net_v4.h"
 
@@ -18,7 +24,7 @@
 using namespace std;
 
 //----------------------------------------------------------------------------------
-// DLL internal state variables:
+// library internal state variables:
 aobj_net_type net;
 double pyr_scale;
 std::vector<std::string> class_names;
@@ -219,3 +225,100 @@ void get_layer_01(struct layer_struct *data, const float* &data_params)
 //    *data_params = lo.host();
 //}
 
+//----------------------------------------------------------------------------------
+// check to see if we are building the library or a standalone executable
+#if !defined(BUILD_LIB)
+
+int main(int argc, char** argv)
+{
+    uint32_t idx;
+    std::string program_root;
+    std::string net_directory;
+    std::string image_directory;
+    std::string test_net_name;
+
+    // timing variables
+    typedef std::chrono::duration<double> d_sec;
+    auto start_time = std::chrono::system_clock::now();
+    auto stop_time = std::chrono::system_clock::now();
+    auto elapsed_time = std::chrono::duration_cast<d_sec>(stop_time - start_time);
+
+    std::vector<std::string> test_images = { "test1.png", "test2.png", "test3.png", "test4.png", "test5.png", "test6.png", "test7.png", "test8.png", "test9.png", "test10.png" };
+    
+    unsigned int num_classes, num_win;
+
+    unsigned char* tiled_img = NULL;
+    unsigned char* det_img = NULL;
+
+    unsigned int t_nr = 0, t_nc = 0;
+    window_struct* det;
+    unsigned int num_dets = 0;
+    struct detection_struct* dets;
+    cv::Mat img;
+    long nr, nc;
+
+    // setup save variable locations
+#if defined(_WIN32) | defined(__WIN32__) | defined(__WIN32) | defined(_WIN64) | defined(__WIN64)
+    program_root = path_check(get_path(get_path(get_path(std::string(argv[0]), "\\"), "\\"), "\\"));
+#else 
+    program_root = get_ubuntu_path();
+#endif
+
+    net_directory = program_root + "nets/";
+    image_directory = "D:/Projects/object_detection_data/test_plane/test1/";
+
+    try
+    {
+        test_net_name = (net_directory + "yj_v4_s4_v4_BEAST_final_net.dat");
+
+        // initialize the network
+        init_net(test_net_name.c_str(), &num_classes, det, &num_win);
+
+        dlib::matrix<uint8_t> ti;
+
+        // run through some images to test the code
+        for (idx = 0; idx < test_images.size(); ++idx)
+        {
+            img = cv::imread(image_directory + test_images[idx], cv::IMREAD_ANYCOLOR);
+            nr = img.rows;
+            nc = img.cols;
+
+
+            unsigned char* image = new unsigned char[nr * nc * 3]{ 0 };
+
+            uint32_t index = 0;
+            for (long r = 0; r < nr; ++r)
+            {
+                for (long c = 0; c < nc; ++c)
+                {
+                    image[index++] = img.at<cv::Vec3b>(r, c)[2];
+                    image[index++] = img.at<cv::Vec3b>(r, c)[1];
+                    image[index++] = img.at<cv::Vec3b>(r, c)[0];
+                }
+            }
+            start_time = std::chrono::system_clock::now();
+
+            // void run_net(unsigned char* image, unsigned int nr, unsigned int nc, unsigned char* &tiled_img, unsigned int *t_nr, unsigned int *t_nc, unsigned char* &det_img, unsigned int *num_dets, struct detection_struct* &dets);
+            //unsigned char* img2 = img.ptr<unsigned char>(0);
+            run_net(img.ptr<unsigned char>(0), nr, nc, tiled_img, &t_nr, &t_nc, det_img, &num_dets, dets);
+
+            stop_time = std::chrono::system_clock::now();
+            elapsed_time = std::chrono::duration_cast<d_sec>(stop_time - start_time);
+
+            std::cout << "Runtime (s): " << elapsed_time.count() << std::endl;
+        }
+
+    }
+    catch (std::exception & e)
+    {
+        std::cout << std::endl;
+        std::cout << e.what() << std::endl;
+    }
+
+    std::cout << std::endl << "Program complete.  Press Enter to close." << std::endl;
+    std::cin.ignore();
+    return 0;
+
+}   // end of main
+
+#endif  // BUILD_LIB
