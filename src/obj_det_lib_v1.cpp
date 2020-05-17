@@ -14,7 +14,7 @@
 #include "overlay_bounding_box.h"
 #include "file_ops.h"
 #include "obj_det_lib.h"
-#include "obj_det_net_v4.h"
+#include "obj_det_net_v10.h"
 
 // dlib includes
 #include <dlib/dnn.h>
@@ -25,7 +25,7 @@ using namespace std;
 
 //----------------------------------------------------------------------------------
 // library internal state variables:
-aobj_net_type net;
+anet_type net;
 double pyr_scale;
 std::vector<std::string> class_names;
 std::vector<dlib::rgb_pixel> class_color;
@@ -55,7 +55,8 @@ void init_net(const char *net_name, unsigned int *num_classes, struct window_str
 
         det_win[idx].w = options.detector_windows[idx].width;
         det_win[idx].h = options.detector_windows[idx].height;
-        strcpy(det_win[idx].label, options.detector_windows[idx].label.c_str());
+        std::string label = options.detector_windows[idx].label.substr(0, std::min((size_t)255, options.detector_windows[idx].label.length()));
+        strcpy(det_win[idx].label, label.c_str());
 
         tmp_names.insert(options.detector_windows[idx].label);
     }
@@ -81,22 +82,32 @@ void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigne
 {
 
     uint64_t r, c;
-    uint64_t idx = 0;
+    uint64_t idx = 0, jdx;
 
     dlib::matrix<dlib::rgb_pixel> img(nr, nc);
+    std::array<dlib::matrix<uint8_t>, array_depth> a_img;
+    
+    for (idx = 0; idx < array_depth; ++idx)
+    {
+        a_img[idx].set_size(nr, nc);
+    }
 
     for (r = 0; r < nr; ++r)
     {
         for (c = 0; c < nc; ++c)
         {
-            // static_cast<unsigned char>
+            for (jdx = 0; jdx < array_depth; ++jdx)
+            {
+                a_img[jdx](r,c) = (*(input_img + (idx+jdx)));
+            }
             img(r, c).red = (*(input_img + (idx++)));
             img(r, c).green = (*(input_img + (idx++)));
-            img(r, c).blue = (*(input_img + (idx++)));
-        }
+            img(r, c).blue = (*(input_img + (idx++)));        }
     }
 
     dlib::matrix<dlib::rgb_pixel> ti;
+    //dlib::matrix<uint8_t> ti;
+    //std::array<dlib::matrix<uint8_t>, array_depth> ti;
     std::vector<dlib::rectangle> rects;
     using pyramid_type = std::remove_reference<decltype(dlib::input_layer(net))>::type::pyramid_type;
     
@@ -105,7 +116,8 @@ void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigne
         dlib::input_layer(net).get_pyramid_padding(),
         dlib::input_layer(net).get_pyramid_outer_padding());
 
-    std::vector<dlib::mmod_rect> d = net(img);
+    //dlib::input_array_image_pyramid(net)
+    std::vector<dlib::mmod_rect> d = net(a_img);
     *num_dets = d.size();
     dets = new detection_struct[d.size()];
 
@@ -138,7 +150,7 @@ void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigne
         }
     }
 
-    det_img = new unsigned char[tmp_img.nr()*tmp_img.nc() * 3];
+    det_img = new unsigned char[tmp_img.nr()*tmp_img.nc()*3];
 
     idx = 0;
     for (r = 0; r < nr; ++r)

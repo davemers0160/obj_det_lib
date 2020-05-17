@@ -124,7 +124,7 @@ include_directories(${project_includes})
 
 # ----------------------------------------------------------------------------
 if(BUILD_LIB)
-    message("Building MNIST Library...")
+    message("Building Object Detection Library...")
     
     add_definitions(-DBUILD_LIB)
 
@@ -161,7 +161,7 @@ if(BUILD_LIB)
     endif()
 
 else()
-    message("Building MNIST executable...")
+    message("Building Object Detector executable...")
 
     add_executable(${LIB_NAME} ${SOURCES})
     target_link_libraries(${LIB_NAME} dlib::dlib ${OpenCV_LIBS})
