@@ -128,7 +128,7 @@ void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigne
     //overlay the dnn detections on the image
     for (idx = 0; idx < d.size(); ++idx)
     {
-        auto& class_index = std::find(class_names.begin(), class_names.end(), d[idx].label);
+        auto class_index = std::find(class_names.begin(), class_names.end(), d[idx].label);
         overlay_bounding_box(tmp_img, d[idx], class_color[std::distance(class_names.begin(), class_index)]);
         dets[idx] = detection_struct(d[idx].rect.left(), d[idx].rect.top(), d[idx].rect.width(), d[idx].rect.height(), d[idx].label.c_str());
 
