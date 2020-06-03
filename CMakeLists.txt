@@ -34,7 +34,7 @@ message("Platform: " ${PLATFORM})
 # Build Options
 option(USE_AVX_INSTRUCTIONS  "Compile your program with AVX instructions"  ON)
 option(BUILD_LIB  "Build the project into a library (.dll/.so) vs a standalone executable"  ON)
-
+option(WITH_OPENCV  "Build the project with OpenCV"  OFF)
 
 # ----------------------------------------------------------------------------
 if(WIN32)
@@ -94,12 +94,16 @@ endif()
    
 # ----------------------------------------------------------------------------
 # find OpenCV
-find_package(OpenCV REQUIRED)
-if (OpenCV_FOUND)
-    set(project_includes ${project_includes} ${OpenCV_INCLUDE_DIRS})
-else()
-    message("OpenCV not found, so we won't build the project.")
-endif()   
+if(WITH_OPENCV)
+    find_package(OpenCV REQUIRED)
+    if (OpenCV_FOUND)
+        set(project_includes ${project_includes} ${OpenCV_INCLUDE_DIRS})
+    else()
+        message("OpenCV not found, so we won't build the project.")
+    endif() 
+    add_definitions(-DUSE_OPENCV)
+
+endif()
 
 # ----------------------------------------------------------------------------
 message(" ")

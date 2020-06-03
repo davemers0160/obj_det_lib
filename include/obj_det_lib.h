@@ -67,6 +67,29 @@ struct detection_struct
 };
 
 // ----------------------------------------------------------------------------------------
+struct detection_center
+{
+    unsigned int x;
+    unsigned int y;
+    char name[256];
+
+    detection_center()
+    {
+        x = 0;
+        y = 0;
+        name[0] = 0;
+    }
+
+    detection_center(unsigned int x_, unsigned int y_, const char name_[])
+    {
+        x = x_;
+        y = y_;
+        strcpy(name, name_);
+    }
+
+};
+
+// ----------------------------------------------------------------------------------------
 struct window_struct
 {
     unsigned int w;
@@ -98,7 +121,7 @@ extern "C" {
 extern "C" {
 #endif
 // This function will take an RGB image in unsigned char row major order [r,g,b, r,g,b,...]
-// as an input and produce a resulting classification of the image.  The input must be 28*28
+// as an input and produce a resulting classification of the image.  
     //OBJ_DLL_API void run_net(unsigned char* image, unsigned int nr, unsigned int nc, unsigned char* &tiled_img, unsigned char* &det_img);
     OBJ_DLL_API void run_net(unsigned char* image, unsigned int nr, unsigned int nc, unsigned char* &tiled_img, unsigned int *t_nr, unsigned int *t_nc, unsigned char* &det_img, unsigned int *num_dets, struct detection_struct* &dets);
 #ifdef __cplusplus
@@ -109,8 +132,18 @@ extern "C" {
 #ifdef __cplusplus
 extern "C" {
 #endif
+    // This function will take an RGB image in unsigned char row major order [r,g,b, r,g,b,...]
+    // as an input and produce a resulting classification of the image.
+    OBJ_DLL_API void get_detections(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned int* num_dets, struct detection_center*& dets);
+#ifdef __cplusplus
+}
+#endif
+
+// ----------------------------------------------------------------------------------------
+#ifdef __cplusplus
+extern "C" {
+#endif
     // This function will output a vector of the output layer for the final classification layer
-    //MNIST_DLL_API void get_layer_01(struct layer_struct &data, const float* &data_params);
     OBJ_DLL_API void get_layer_01(struct layer_struct *data, const float* &data_params);
 #ifdef __cplusplus
 }

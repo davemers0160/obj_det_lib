@@ -11,7 +11,10 @@
 #endif
 
 // Custom includes
+#if defined(USE_OPENCV)
 #include "overlay_bounding_box.h"
+#endif
+
 #include "file_ops.h"
 #include "obj_det_lib.h"
 #include "obj_det_net_v10.h"
@@ -126,13 +129,19 @@ void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigne
     dlib::assign_image(tmp_img, img);
 
     //overlay the dnn detections on the image
+#if defined(USE_OPENCV)
     for (idx = 0; idx < d.size(); ++idx)
     {
         auto class_index = std::find(class_names.begin(), class_names.end(), d[idx].label);
         overlay_bounding_box(tmp_img, d[idx], class_color[std::distance(class_names.begin(), class_index)]);
         dets[idx] = detection_struct(d[idx].rect.left(), d[idx].rect.top(), d[idx].rect.width(), d[idx].rect.height(), d[idx].label.c_str());
-
     }
+#else
+    for (idx = 0; idx < d.size(); ++idx)
+    {
+        dets[idx] = detection_struct(d[idx].rect.left(), d[idx].rect.top(), d[idx].rect.width(), d[idx].rect.height(), d[idx].label.c_str());
+    }
+#endif
 
     // bring out the tiled image version of the input image
     tiled_img = new unsigned char[ti.nr()*ti.nc()*3];
@@ -164,6 +173,47 @@ void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigne
     }
 
 }   // end of run_net
+
+//----------------------------------------------------------------------------------
+void get_detections(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned int* num_dets, struct detection_center*& dets)
+{
+
+    uint64_t r, c;
+    uint64_t idx = 0, jdx;
+
+    dlib::matrix<dlib::rgb_pixel> img(nr, nc);
+    std::array<dlib::matrix<uint8_t>, array_depth> a_img;
+
+    for (idx = 0; idx < array_depth; ++idx)
+    {
+        a_img[idx].set_size(nr, nc);
+    }
+
+    for (r = 0; r < nr; ++r)
+    {
+        for (c = 0; c < nc; ++c)
+        {
+            for (jdx = 0; jdx < array_depth; ++jdx)
+            {
+                a_img[jdx](r, c) = (*(input_img + (idx + jdx)));
+            }
+            img(r, c).red = (*(input_img + (idx++)));
+            img(r, c).green = (*(input_img + (idx++)));
+            img(r, c).blue = (*(input_img + (idx++)));
+        }
+    }
+
+    std::vector<dlib::mmod_rect> d = net(a_img);
+    *num_dets = d.size();
+    dets = new detection_center[d.size()];
+
+    for (idx = 0; idx < d.size(); ++idx)
+    {
+        dlib::point c = dlib::center(d[idx].rect);
+        dets[idx] = detection_center(c.x(), c.y(), d[idx].label.c_str());
+    }
+
+}   // end of get_detections
 
 //----------------------------------------------------------------------------------
 void get_layer_01(struct layer_struct *data, const float* &data_params)
