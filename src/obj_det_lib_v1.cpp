@@ -18,6 +18,7 @@
 #include "file_ops.h"
 #include "obj_det_lib.h"
 #include "obj_det_net_v10.h"
+#include "prune_detects.h"
 
 // dlib includes
 #include <dlib/dnn.h>
@@ -81,136 +82,171 @@ void init_net(const char *net_name, unsigned int *num_classes, struct window_str
 }
 
 //----------------------------------------------------------------------------------
-void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned char* &tiled_img, unsigned int *t_nr, unsigned int *t_nc, unsigned char* &det_img, unsigned int *num_dets, struct detection_struct* &dets)
+void base_run_net(std::array<dlib::matrix<uint8_t>, array_depth> a_img, std::vector<dlib::mmod_rect> &detects)
 {
 
-    uint64_t r, c;
-    uint64_t idx = 0, jdx;
+}
 
-    dlib::matrix<dlib::rgb_pixel> img(nr, nc);
-    std::array<dlib::matrix<uint8_t>, array_depth> a_img;
-    
-    for (idx = 0; idx < array_depth; ++idx)
-    {
-        a_img[idx].set_size(nr, nc);
-    }
-
-    for (r = 0; r < nr; ++r)
-    {
-        for (c = 0; c < nc; ++c)
-        {
-            for (jdx = 0; jdx < array_depth; ++jdx)
-            {
-                a_img[jdx](r,c) = (*(input_img + (idx+jdx)));
-            }
-            img(r, c).red = (*(input_img + (idx++)));
-            img(r, c).green = (*(input_img + (idx++)));
-            img(r, c).blue = (*(input_img + (idx++)));        }
-    }
-
+//----------------------------------------------------------------------------------
+void get_pyramid_tiled_input(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned char*& tiled_img, unsigned int* t_nr, unsigned int* t_nc)
+{
+    uint64_t index = 0;
     dlib::matrix<dlib::rgb_pixel> ti;
-    //dlib::matrix<uint8_t> ti;
-    //std::array<dlib::matrix<uint8_t>, array_depth> ti;
     std::vector<dlib::rectangle> rects;
     using pyramid_type = std::remove_reference<decltype(dlib::input_layer(net))>::type::pyramid_type;
-    
+
     // create the pyramid using pyramid type
-    dlib::create_tiled_pyramid<pyramid_type>(img, ti, rects,
+    dlib::create_tiled_pyramid<pyramid_type>(dlib::mat(input_img, nr, nc), ti, rects,
         dlib::input_layer(net).get_pyramid_padding(),
         dlib::input_layer(net).get_pyramid_outer_padding());
 
-    //dlib::input_array_image_pyramid(net)
-    std::vector<dlib::mmod_rect> d = net(a_img);
-    *num_dets = d.size();
-    dets = new detection_struct[d.size()];
-
-    // copy the image into tmp_img so that the original data is not modified
-    dlib::matrix<dlib::rgb_pixel> tmp_img;
-    dlib::assign_image(tmp_img, img);
-
-    //overlay the dnn detections on the image
-#if defined(USE_OPENCV)
-    for (idx = 0; idx < d.size(); ++idx)
-    {
-        auto class_index = std::find(class_names.begin(), class_names.end(), d[idx].label);
-        overlay_bounding_box(tmp_img, d[idx], class_color[std::distance(class_names.begin(), class_index)]);
-        dets[idx] = detection_struct(d[idx].rect.left(), d[idx].rect.top(), d[idx].rect.width(), d[idx].rect.height(), d[idx].label.c_str());
-    }
-#else
-    for (idx = 0; idx < d.size(); ++idx)
-    {
-        dets[idx] = detection_struct(d[idx].rect.left(), d[idx].rect.top(), d[idx].rect.width(), d[idx].rect.height(), d[idx].label.c_str());
-    }
-#endif
 
     // bring out the tiled image version of the input image
-    tiled_img = new unsigned char[ti.nr()*ti.nc()*3];
+    tiled_img = new unsigned char[(uint64_t)ti.nr() * (uint64_t)ti.nc() * 3];
     *t_nr = ti.nr();
     *t_nc = ti.nc();
 
-    idx = 0;   
-    for (r = 0; r < *t_nr; ++r)
+    index = 0;
+    for (unsigned int r = 0; r < *t_nr; ++r)
     {
-        for (c = 0; c < *t_nc; ++c)
+        for (unsigned int c = 0; c < *t_nc; ++c)
         {
-            tiled_img[idx++] = ti(r, c).red;
-            tiled_img[idx++] = ti(r, c).green;
-            tiled_img[idx++] = ti(r, c).blue;
+            tiled_img[index++] = ti(r, c).red;
+            tiled_img[index++] = ti(r, c).green;
+            tiled_img[index++] = ti(r, c).blue;
         }
     }
+}
 
-    det_img = new unsigned char[tmp_img.nr()*tmp_img.nc()*3];
+//----------------------------------------------------------------------------------
+void run_net(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned char* &det_img, unsigned int *num_dets, struct detection_struct* &dets)
+{
 
-    idx = 0;
-    for (r = 0; r < nr; ++r)
+    uint64_t r, c;
+    uint64_t idx = 0;
+    uint64_t index = 0;
+
+    dlib::matrix<dlib::rgb_pixel> img(nr, nc);
+    std::array<dlib::matrix<uint8_t>, array_depth> a_img;
+
+    uint64_t size = (uint64_t)nr * (uint64_t)nc;
+
+    try 
     {
-        for (c = 0; c < nc; ++c)
+        // copy the pointer into the input image.  The format is assumed to be row-major order
+        // and if the array_depth (number of channels) is greater than 1 then channels are not interleaved
+        for (idx = 0; idx < array_depth; ++idx)
         {
-            det_img[idx++] = tmp_img(r, c).red;
-            det_img[idx++] = tmp_img(r, c).green;
-            det_img[idx++] = tmp_img(r, c).blue;
+            a_img[idx] = dlib::mat<unsigned char>((input_img + (idx * (size))), (long)nr, (long)nc);
+        }
+
+        if (array_depth < 3)
+        {
+            for (r = 0; r < nr; ++r)
+            {
+                for (c = 0; c < nc; ++c)
+                {
+                    img(r, c).red = a_img[0](r, c);
+                    img(r, c).green = a_img[0](r, c);
+                    img(r, c).blue = a_img[0](r, c);
+                }
+            }
+        }
+        else
+        {
+            for (r = 0; r < nr; ++r)
+            {
+                for (c = 0; c < nc; ++c)
+                {
+                    img(r, c).red = a_img[0](r, c);
+                    img(r, c).green = a_img[1](r, c);
+                    img(r, c).blue = a_img[2](r, c);
+                }
+            }
+        }
+
+
+        std::vector<dlib::mmod_rect> d = net(a_img);
+        prune_detects(d, 0.3);
+
+        *num_dets = d.size();
+        dets = new detection_struct[d.size()];
+
+        // copy the image into tmp_img so that the original data is not modified
+        dlib::matrix<dlib::rgb_pixel> tmp_img;
+        dlib::assign_image(tmp_img, img);
+
+        //overlay the dnn detections on the image
+#if defined(USE_OPENCV)
+        for (idx = 0; idx < d.size(); ++idx)
+        {
+            auto class_index = std::find(class_names.begin(), class_names.end(), d[idx].label);
+            overlay_bounding_box(tmp_img, d[idx], class_color[std::distance(class_names.begin(), class_index)]);
+            dets[idx] = detection_struct(d[idx].rect.left(), d[idx].rect.top(), d[idx].rect.width(), d[idx].rect.height(), d[idx].label.c_str());
+        }
+#else
+        for (idx = 0; idx < d.size(); ++idx)
+        {
+            dets[idx] = detection_struct(d[idx].rect.left(), d[idx].rect.top(), d[idx].rect.width(), d[idx].rect.height(), d[idx].label.c_str());
+        }
+#endif
+
+        det_img = new unsigned char[tmp_img.nr() * tmp_img.nc() * 3];
+
+        idx = 0;
+        for (r = 0; r < nr; ++r)
+        {
+            for (c = 0; c < nc; ++c)
+            {
+                det_img[idx++] = tmp_img(r, c).red;
+                det_img[idx++] = tmp_img(r, c).green;
+                det_img[idx++] = tmp_img(r, c).blue;
+            }
         }
     }
-
+    catch (std::exception e)
+    {
+        std::cout << "Error in run_net function:" << std::endl;
+        std::cout << e.what() << std::endl;
+    }
 }   // end of run_net
 
 //----------------------------------------------------------------------------------
 void get_detections(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned int* num_dets, struct detection_center*& dets)
 {
-
-    uint64_t r, c;
-    uint64_t idx = 0, jdx;
+    uint64_t idx = 0;
 
     dlib::matrix<dlib::rgb_pixel> img(nr, nc);
     std::array<dlib::matrix<uint8_t>, array_depth> a_img;
 
-    for (idx = 0; idx < array_depth; ++idx)
-    {
-        a_img[idx].set_size(nr, nc);
-    }
+    uint64_t size = (uint64_t)nr * (uint64_t)nc;
 
-    for (r = 0; r < nr; ++r)
+    try 
     {
-        for (c = 0; c < nc; ++c)
+        // copy the pointer into the input image.  The format is assumed to be row-major order
+        // and if the array_depth (number of channels) is greater than 1 then channels are not interleaved
+        for (idx = 0; idx < array_depth; ++idx)
         {
-            for (jdx = 0; jdx < array_depth; ++jdx)
-            {
-                a_img[jdx](r, c) = (*(input_img + (idx + jdx)));
-            }
-            img(r, c).red = (*(input_img + (idx++)));
-            img(r, c).green = (*(input_img + (idx++)));
-            img(r, c).blue = (*(input_img + (idx++)));
+            a_img[idx] = dlib::mat<unsigned char>((input_img + (idx * (size))), (long)nr, (long)nc);
+        }
+
+        std::vector<dlib::mmod_rect> d = net(a_img);
+
+        prune_detects(d, 0.3);
+
+        *num_dets = d.size();
+        dets = new detection_center[d.size()];
+
+        for (idx = 0; idx < d.size(); ++idx)
+        {
+            dlib::point c = dlib::center(d[idx].rect);
+            dets[idx] = detection_center(c.x(), c.y(), d[idx].label.c_str());
         }
     }
-
-    std::vector<dlib::mmod_rect> d = net(a_img);
-    *num_dets = d.size();
-    dets = new detection_center[d.size()];
-
-    for (idx = 0; idx < d.size(); ++idx)
+    catch (std::exception e)
     {
-        dlib::point c = dlib::center(d[idx].rect);
-        dets[idx] = detection_center(c.x(), c.y(), d[idx].label.c_str());
+        std::cout << "Error in get_detections function:" << std::endl;
+        std::cout << e.what() << std::endl;
     }
 
 }   // end of get_detections
@@ -305,8 +341,9 @@ int main(int argc, char** argv)
     auto stop_time = std::chrono::system_clock::now();
     auto elapsed_time = std::chrono::duration_cast<d_sec>(stop_time - start_time);
 
-    std::vector<std::string> test_images = { "test1.png", "test2.png", "test3.png", "test4.png", "test5.png", "test6.png", "test7.png", "test8.png", "test9.png", "test10.png" };
-    
+    //std::vector<std::string> test_images = { "test1.png", "test2.png", "test3.png", "test4.png", "test5.png", "test6.png", "test7.png", "test8.png", "test9.png", "test10.png" };
+    std::vector<std::string> test_images = { "mframe_05042.png", "mframe_00279.png", "mframe_00156.png", "mframe_00163.png", "mframe_00353.png"};
+
     unsigned int num_classes, num_win;
 
     unsigned char* tiled_img = NULL;
@@ -316,6 +353,7 @@ int main(int argc, char** argv)
     window_struct* det;
     unsigned int num_dets = 0;
     struct detection_struct* dets;
+    detection_center* detects;
     cv::Mat img;
     long nr, nc;
 
@@ -327,42 +365,49 @@ int main(int argc, char** argv)
 #endif
 
     net_directory = program_root + "nets/";
-    image_directory = "D:/Projects/object_detection_data/test_plane/test1/";
+    //image_directory = program_root + "images/";
+    image_directory = "D:/Projects/object_detection_data/FaceDetection/Data/mod_green/";
 
     try
     {
-        test_net_name = (net_directory + "yj_v4_s4_v4_BEAST_final_net.dat");
+        test_net_name = (net_directory + "fd_v10a_HPC_final_net.dat");
 
         // initialize the network
         init_net(test_net_name.c_str(), &num_classes, det, &num_win);
 
         dlib::matrix<uint8_t> ti;
 
+        uint32_t ch = 0;
+
         // run through some images to test the code
         for (idx = 0; idx < test_images.size(); ++idx)
         {
-            img = cv::imread(image_directory + test_images[idx], cv::IMREAD_ANYCOLOR);
+            img = cv::imread(image_directory + test_images[idx], cv::IMREAD_GRAYSCALE);
             nr = img.rows;
             nc = img.cols;
 
+            ch = img.channels();
 
-            unsigned char* image = new unsigned char[nr * nc * 3]{ 0 };
+            unsigned char* image = new unsigned char[nr * nc * ch]{ 0 };
 
-            uint32_t index = 0;
-            for (long r = 0; r < nr; ++r)
-            {
-                for (long c = 0; c < nc; ++c)
-                {
-                    image[index++] = img.at<cv::Vec3b>(r, c)[2];
-                    image[index++] = img.at<cv::Vec3b>(r, c)[1];
-                    image[index++] = img.at<cv::Vec3b>(r, c)[0];
-                }
-            }
+            //uint32_t index = 0;
+            //for (long r = 0; r < nr; ++r)
+            //{
+            //    for (long c = 0; c < nc; ++c)
+            //    {
+            //        image[index++] = img.at<cv::Vec3b>(r, c)[2];
+            //        image[index++] = img.at<cv::Vec3b>(r, c)[1];
+            //        image[index++] = img.at<cv::Vec3b>(r, c)[0];
+            //    }
+            //}
             start_time = std::chrono::system_clock::now();
 
             // void run_net(unsigned char* image, unsigned int nr, unsigned int nc, unsigned char* &tiled_img, unsigned int *t_nr, unsigned int *t_nc, unsigned char* &det_img, unsigned int *num_dets, struct detection_struct* &dets);
             //unsigned char* img2 = img.ptr<unsigned char>(0);
-            run_net(img.ptr<unsigned char>(0), nr, nc, tiled_img, &t_nr, &t_nc, det_img, &num_dets, dets);
+            run_net(img.ptr<unsigned char>(0), nr, nc, det_img, &num_dets, dets);
+
+            get_detections(img.ptr<unsigned char>(0), nr, nc, &num_dets, detects);
+
 
             stop_time = std::chrono::system_clock::now();
             elapsed_time = std::chrono::duration_cast<d_sec>(stop_time - start_time);

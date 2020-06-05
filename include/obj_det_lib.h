@@ -97,20 +97,11 @@ struct window_struct
     char label[256];    
 };
 
-//// ----------------------------------------------------------------------------------------
-//typedef struct
-//{
-//    unsigned int nr;
-//    unsigned int nc;
-//    unsigned char *data;
-//} image;
-
-
 // ----------------------------------------------------------------------------------------
 #ifdef __cplusplus
 extern "C" {
 #endif
-// This function will initialize the network and load the required weights
+    // This function will initialize the network and load the required weights
     OBJ_DLL_API void init_net(const char *net_name, unsigned int *num_classes, struct window_struct* &det_win, unsigned int *num_win);
 #ifdef __cplusplus
 }
@@ -120,10 +111,8 @@ extern "C" {
 #ifdef __cplusplus
 extern "C" {
 #endif
-// This function will take an RGB image in unsigned char row major order [r,g,b, r,g,b,...]
-// as an input and produce a resulting classification of the image.  
-    //OBJ_DLL_API void run_net(unsigned char* image, unsigned int nr, unsigned int nc, unsigned char* &tiled_img, unsigned char* &det_img);
-    OBJ_DLL_API void run_net(unsigned char* image, unsigned int nr, unsigned int nc, unsigned char* &tiled_img, unsigned int *t_nr, unsigned int *t_nc, unsigned char* &det_img, unsigned int *num_dets, struct detection_struct* &dets);
+    // This function creates a tiled image pyramid like the one that the network creates to run the detections on
+    OBJ_DLL_API void get_pyramid_tiled_input(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned char*& tiled_img, unsigned int* t_nr, unsigned int* t_nc);
 #ifdef __cplusplus
 }
 #endif
@@ -132,8 +121,19 @@ extern "C" {
 #ifdef __cplusplus
 extern "C" {
 #endif
-    // This function will take an RGB image in unsigned char row major order [r,g,b, r,g,b,...]
-    // as an input and produce a resulting classification of the image.
+    // This function will take an grayscale image in unsigned char row major order [r0,c0, r0,c1, r0,c2,...]
+    // as an input and will return the bounding boxes of the detections in the image
+    OBJ_DLL_API void run_net(unsigned char* image, unsigned int nr, unsigned int nc, unsigned char* &det_img, unsigned int *num_dets, struct detection_struct* &dets);
+#ifdef __cplusplus
+}
+#endif
+
+// ----------------------------------------------------------------------------------------
+#ifdef __cplusplus
+extern "C" {
+#endif
+    // This function will take an grayscale image in unsigned char row major order [r0,c0, r0,c1, r0,c2,...]
+    // as an input and will return the centers of the detections in the image
     OBJ_DLL_API void get_detections(unsigned char* input_img, unsigned int nr, unsigned int nc, unsigned int* num_dets, struct detection_center*& dets);
 #ifdef __cplusplus
 }
